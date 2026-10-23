@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /drafts/{code} {
+      function signed() { return request.auth != null; }
+      function participant() { return signed() && (resource.data.host == request.auth.uid || resource.data.guest == request.auth.uid); }
+      function validGame(g) { return g.keys().hasOnly(['names','category','picks','turn','createdAt','status']) && g.names is list && g.names.size() == 2 && g.picks is list && g.picks.size() == 2 && g.turn is int && g.turn >= 0 && g.turn <= 10 && g.category in ['all','flop','culte','star','chaos']; }
+      allow create: if signed() && code.matches('[A-Z0-9]{6}') && request.resource.data.keys().hasOnly(['host','guest','game']) && request.resource.data.host == request.auth.uid && request.resource.data.guest == null && validGame(request.resource.data.game) && request.resource.data.game.turn == 0 && request.resource.data.game.picks[0].size() == 0 && request.resource.data.game.picks[1].size() == 0;
+      allow read: if participant();
+      // A new guest can read only through get for the room code, to join.
+      allow get: if signed() && (participant() || resource.data.guest == null);
+      allow update: if signed() && (participant() || (resource.data.guest == null && request.resource.data.guest == request.auth.uid)) && request.resource.data.host == resource.data.host && request.resource.data.keys().hasOnly(['host','guest','game']) && validGame(request.resource.data.game) && (
+        (resource.data.guest == null && request.auth.uid != resource.data.host && request.resource.data.guest == request.auth.uid && request.resource.data.game.turn == resource.data.game.turn && request.resource.data.game.picks == resource.data.game.picks && request.resource.data.game.category == resource.data.game.category && request.resource.data.game.names[0] == resource.data.game.names[0]) ||
+        (request.resource.data.guest == resource.data.guest && request.resource.data.game.names == resource.data.game.names && request.resource.data.game.category == resource.data.game.category && request.resource.data.game.createdAt == resource.data.game.createdAt && request.resource.data.game.turn == resource.data.game.turn + 1 && request.resource.data.game.turn <= 10 && (
+          (resource.data.game.turn in [0,3,4,7,8] && request.auth.uid == resource.data.host && request.resource.data.game.picks[0].size() == resource.data.game.picks[0].size()+1 && request.resource.data.game.picks[1] == resource.data.game.picks[1]) ||
+          (resource.data.game.turn in [1,2,5,6,9] && request.auth.uid == resource.data.guest && request.resource.data.game.picks[1].size() == resource.data.game.picks[1].size()+1 && request.resource.data.game.picks[0] == resource.data.game.picks[0])
+        ))
+      );
+      allow delete: if false;
+    }
+  }
+}
